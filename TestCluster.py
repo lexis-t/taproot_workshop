@@ -9,7 +9,27 @@ import test_framework
 from test_framework.script import CScript, OP_IF, OP_ELSE, OP_ENDIF, OP_HASH160, OP_EQUAL, OP_CHECKSIG, \
     SegwitV0SignatureHash, get_p2pkh_script, SIGHASH_ALL, CScriptOp
 from test_framework.segwit_addr import bech32_decode
+from test_framework.util import hex_str_to_bytes
+# from pybitcoin import BitcoinPrivateKey
 from util import TestWrapper
+from hashlib import sha256
+import base58
+import binascii
+import ecdsa
+from ecdsa import SigningKey, SECP256k1, VerifyingKey, BadSignatureError
+
+# pip install base58
+
+def unwif(b58cstr):
+    bytes = base58.b58decode_check(b58cstr)
+    return (bytes[0], bytes[1:])
+
+def get_key_from_wif(key):
+    private_key = unwif(key)[1]
+    if (len(private_key) == 33):
+        private_key = private_key[:-1]
+    return private_key
+
 
 test = TestWrapper()
 # Start TestNodes
@@ -79,21 +99,21 @@ sighash = SegwitV0SignatureHash(script=script,
 
 
 
-
 k1 = node1.dumpprivkey(node1_info['address'])
-print(k1)
+print("dumpkey: ",k1)
+# see https://github.com/patricklodder/devfundtx !!!!
+# https://learnmeabitcoin.com/guide/public-key good info
+private_key = SigningKey.from_string(get_key_from_wif(k1), SECP256k1, sha256)
+print("private_key: ", private_key.verifying_key.to_string().hex())
+print("private_key2: ", private_key.to_string().hex())
 
-#k2 = node2.dumpprivkey(node2_info['address'])
-#print(k2)
 
-key = bitcoin.decode_privkey(k1)
-print(key)
-
-priv = ECKey()
-priv.generate()
 
 priv1 = ECKey()
-priv1.set(key)
+
+priv1.set(private_key.to_string())
+
+print("priv1: ",priv1.get_bytes().hex()) # priv1 == private_key2
 
 sig = priv1.sign_ecdsa(sighash) + chr(SIGHASH_ALL).encode('latin-1')
 
@@ -102,24 +122,15 @@ print("Signature: {}\n".format(sig.hex()))
 # Add a witness to the transaction. For a P2WPKH, the witness field is the signature and pubkey
 spending_tx.wit.vtxinwit.append(CTxInWitness([sig.hex(), channel_addr_1]))
 
-#print(spending_tx)
-
 # Serialize signed transaction for broadcast
-spending_tx_str = spending_tx.serialize()
+# print("Spending transaction:\n{}\n".format(spending_tx))
+
+# print("Transaction weight: {}\n".format(node1.decoderawtransaction(spending_tx.serialize().hex())['weight']))
+
+# spending_tx_str = spending_tx.serialize()
 
 # Test mempool acceptance
-assert node1.testmempoolaccept(rawtxs=[spending_tx_str], maxfeerate=0)[0]['allowed']
-
-
-
-#node1.
-
-
-
-
-
-#addr1 = node1.get_deterministic_priv_key().address
-#program = hash160(addr1)
-
+# assert node1.testmempoolaccept(rawtxs=[spending_tx_str], maxfeerate=0)[0]['allowed']
+# assert node1.test_transaction(spending_tx)
 
 test.shutdown()
