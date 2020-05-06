@@ -89,6 +89,9 @@ print(k1)
 key = bitcoin.decode_privkey(k1)
 print(key)
 
+priv = ECKey()
+priv.generate()
+
 priv1 = ECKey()
 priv1.set(key)
 
