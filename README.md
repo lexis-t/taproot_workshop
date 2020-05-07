@@ -109,7 +109,8 @@ $ git clone https://github.com/bitcoinops/bitcoin
 ```
 
 Note the path where you cloned the bitcoinops/bitcoin repository and add it to
-the `config.ini` file in your taproot-workshop repository. For example, set:
+the `config.ini` copied from `config.ini.sample` file in your taproot-workshop repository.
+For example, set:
 
 ```
 SOURCE_DIRECTORY=/Users/optech/bitcoin
