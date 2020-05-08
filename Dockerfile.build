@@ -1,0 +1,32 @@
+# Instructions for preparing image
+# FROM jupyter/minimal-notebook
+FROM ubuntu:bionic
+
+# Install all OS dependencies
+RUN apt-get update && apt-get install -yq --no-install-recommends \
+    curl \
+    git \
+    ca-certificates \
+    build-essential \
+    libtool \
+    autotools-dev \
+    automake \
+    pkg-config \
+    bsdmainutils \
+    python3 \
+    python3-pip \
+    python3-setuptools \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Get bitcoin source
+RUN git clone https://github.com/bitcoinops/bitcoin --branch Taproot_V0.1.4 --single-branch --depth 1 /bitcoin
+
+# Build dependencies from bitcoin repo
+RUN cd /bitcoin/depends && make -j 8 && ls /bitcoin/depends
+
+# Build bitcoin with local dependencies
+RUN cd /bitcoin && ./autogen.sh && ./configure --prefix=$PWD/depends/x86_64-pc-linux-gnu --without-gui && make -j 8
+
+# Install Jupyter dependencies
+RUN pip3 install jupyter
+
