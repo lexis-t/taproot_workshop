@@ -87,6 +87,11 @@ The following notebooks are located in the [Colab](https://github.com/bitcoinops
 The Optech Schnorr/Taproot workshop can be setup and run locally.
 This section lists the necessary steps and requirements.
 
+**ArroLabs additions:** Check the commands in Makefile:
+
+- ``make prepare`` to prepare config.ini
+- ``make run`` to start jupyter locally in docker with compiled bitcoin
+
 #### Clone this (bitcoinops/taproot-workshop) repository
 
 ```
