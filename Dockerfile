@@ -1,13 +1,9 @@
-ARG BASE_CONTAINER=jupyter/minimal-notebook
-FROM $BASE_CONTAINER
+# Container for running
+FROM arrowpass/taproot_workshop
 
-USER root
+ADD . /app
+WORKDIR /app
 
-# Install all OS dependencies for fully functional notebook server
-RUN apt-get update && apt-get install -yq --no-install-recommends \
-    libboost \
-    libevent \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+EXPOSE 8888
 
-# Switch back to jovyan to avoid accidental container runs as root
-USER $NB_UID
+# RUN jupyter notebook --ip=0.0.0.0 --port=8888 --allow-root

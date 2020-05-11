@@ -3,4 +3,4 @@
 [path]
 # Set this to the source directory for your Optech Taproot Bitcoin Core
 # eg SOURCE_DIRECTORY=/Users/Optech/bitcoin
-SOURCE_DIRECTORY=
+SOURCE_DIRECTORY=/bitcoin
