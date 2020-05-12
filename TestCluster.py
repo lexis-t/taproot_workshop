@@ -75,7 +75,7 @@ addr0_change = key_to_p2pkh(key0_change.get_pubkey().get_bytes())
 key0_change_bytes = b'\xef' + key0_change.get_bytes() + b'\x01'
 key0_change_wif = str(base58.b58encode_check(key0_change_bytes), "ascii")
 
-#node1.importprivkey(key0_change_wif, "key0 change", False)
+# node1.importprivkey(key0_change_wif, "key0 change", False)
 
 
 # Receiving key
@@ -86,7 +86,7 @@ addr1 = key_to_p2sh_p2wpkh(key1.get_pubkey().get_bytes())
 # node2.importaddress(addr1, "addr1", False)
 
 # Send coins to spending address
-tx0_id = node1.sendtoaddress(addr0, 20, "Initial transaction")
+tx0_id = node1.sendtoaddress(addr0, 50, "Initial transaction")
 print("Initial transaction id: {}".format(tx0_id))
 
 node1.generatetoaddress(2, node1_addr)
@@ -97,7 +97,6 @@ print('Initial balance:', init_balance)
 tx0_data = node1.gettransaction(tx0_id)
 tx0 = FromHex(CTransaction(), tx0_data["hex"])
 print(tx0)
-
 
 # Transaction script from https://medium.com/softblocks/lightning-network-in-depth-part-2-htlc-and-payment-routing-db46aea445a8
 # but without timeout condition for simplicity
@@ -118,18 +117,14 @@ script_addr = script_to_p2sh(channel_script)
 print("Channel script addr: {}".format(script_addr))
 
 channel = CTransaction()
-channel.nVersion = 1
+channel.nVersion = 2
 channel.nLockTime = 0
 
 outpoint = COutPoint(int(tx0_id, 16), 0)
 channel_in = CTxIn(outpoint)
 channel.vin = [channel_in]
 
-
-# channel_out = CTxOut(1999_999_000, CScript([OP_HASH160, hash160(channel_script), OP_EQUAL]))
-# channel.vout = [channel_out]
-
-channel_out = CTxOut(1500_000_000, CScript([OP_HASH160, hash160(channel_script), OP_EQUAL]))
+channel_out = CTxOut(4500_000_000, CScript([OP_HASH160, hash160(channel_script), OP_EQUAL]))
 channel_change = CTxOut(499_999_000, CScript([OP_DUP, OP_HASH160, hash160(key0.get_pubkey().get_bytes()), OP_EQUALVERIFY, OP_CHECKSIG]))
 channel.vout = [channel_out, channel_change]
 
@@ -141,21 +136,18 @@ print("Signing res: {}".format(res))
 
 channel_tx = res["hex"]
 
-# channel_vin_sig = key0.sign_ecdsa(channel_tx)
+# channel_tx = channel.serialize()
+# channel_vin_sig = key0.sign_ecdsa(channel_tx) + chr(SIGHASH_ALL).encode('latin-1')
 # channel.vin[0].scriptSig = CScript([channel_vin_sig, key0.get_pubkey().get_bytes()])
-#
 # channel_tx = channel.serialize().hex()
 
 print(channel_tx)
 
 res = node1.sendrawtransaction(channel_tx)
-# res = node1.testmempoolaccept(rawtxs=[channel_tx], maxfeerate=0)
-# print(res)
-
 node1.generatetoaddress(2, node1_addr)
 
 unspent = node1.listunspent(addresses=[addr0])
-print(unspent)
+print("Change remained: {}".format(unspent[0]["amount"]))
 
 # balance = node1.getreceivedbyaddress(addr0_change)
 # print('Addr0 change balance:', balance)
