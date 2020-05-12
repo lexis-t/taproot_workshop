@@ -9,7 +9,7 @@ from test_framework.key import generate_key_pair, ECKey
 from test_framework.messages import COutPoint, CTransaction, CTxIn, CTxOut, CTxInWitness, FromHex
 import test_framework
 from test_framework.script import CScript, CScriptOp, OP_IF, OP_ELSE, OP_ENDIF, OP_HASH160, OP_EQUAL, OP_CHECKSIG, \
-    SegwitV0SignatureHash, get_p2pkh_script, hash160, SIGHASH_ALL
+    SegwitV0SignatureHash, get_p2pkh_script, hash160, SIGHASH_ALL, OP_DUP, OP_EQUALVERIFY
 from test_framework.segwit_addr import bech32_decode
 from util import TestWrapper
 import base58
@@ -18,49 +18,65 @@ import bitcoin
 test = TestWrapper()
 # Start TestNodes
 # test.num_nodes = 3
-test.setup(num_nodes=3)
+test.setup(num_nodes=1)
 print("count nodes", test.num_nodes)
 
 version = test.nodes[0].getnetworkinfo()['subversion']
 print("Client version is {}".format(version))
 
 node1 = test.nodes[0]  # coin sender
-node2 = test.nodes[1]  # coin receiver
-node3 = test.nodes[2]  # mainer
+# node2 = test.nodes[1]  # coin receiver
+# node3 = test.nodes[2]  # mainer
 
 node1_addr = node1.getnewaddress(address_type="legacy")
-node2_addr = node2.getnewaddress(address_type="bech32")
-node3_addr = node3.getnewaddress(address_type="bech32")
+# node2_addr = node2.getnewaddress(address_type="bech32")
+# node3_addr = node3.getnewaddress(address_type="bech32")
 
 node1.generatetoaddress(250, node1_addr)
-node2.generatetoaddress(250, node2_addr)
+# node2.generatetoaddress(250, node2_addr)
 # node3.generate(2)
 
 node1_priv = node1.dumpprivkey(node1_addr)
+print("Node1 key base58: {}".format(node1_priv))
+
 node1_key_bytes = base58.b58decode_check(node1_priv)
 print("Node1 key: {}".format(node1_key_bytes.hex()))
+
+node1_key_reencoded = base58.b58encode_check(node1_key_bytes)
+print("Node1 key reencoded: {}".format(node1_key_reencoded))
 
 balance1 = node1.getbalance()
 print('Balance node 1:', balance1)
 
-balance2 = node2.getbalance()
-print('Balance node 2:', balance2)
+# balance2 = node2.getbalance()
+# print('Balance node 2:', balance2)
 
 # Spending key
 key0 = ECKey()
 key0.generate(compressed=True)
 
-# spending_wif = bitcoin.encode_privkey(spending_key.get_bytes(), "wif_compressed", 111)
-# print("WIF: {}".format(wif))
+key0_bytes = b'\xef' + key0.get_bytes() + b'\x01'
+key0_wif = str(base58.b58encode_check(key0_bytes), "ascii")
 
-# spending_wif = byte_to_base58(key0.get_bytes()+b'0x01', 111)
 addr0 = key_to_p2pkh(key0.get_pubkey().get_bytes())
 
-# print("Spending WIF: {}".format(spending_wif))
+print("key0 bytes: {}".format(key0_bytes.hex()))
+print("key0 WIF: {}".format(key0_wif))
 print("addr0: {}".format(addr0))
 
-# node1.importprivkey(spending_wif, "key0", False)
-node1.importaddress(addr0, "addr0", False)
+node1.importprivkey(key0_wif, "key0", False)
+# node1.importaddress(addr0, "addr0", False)
+
+key0_change = ECKey()
+key0_change.generate(compressed=True)
+
+addr0_change = key_to_p2pkh(key0_change.get_pubkey().get_bytes())
+
+key0_change_bytes = b'\xef' + key0_change.get_bytes() + b'\x01'
+key0_change_wif = str(base58.b58encode_check(key0_change_bytes), "ascii")
+
+#node1.importprivkey(key0_change_wif, "key0 change", False)
+
 
 # Receiving key
 key1 = ECKey()
@@ -109,20 +125,41 @@ outpoint = COutPoint(int(tx0_id, 16), 0)
 channel_in = CTxIn(outpoint)
 channel.vin = [channel_in]
 
-channel_out = CTxOut(499_990_000, CScript([OP_HASH160, hash160(channel_script), OP_EQUAL]))
-channel.vout = [channel_out]
 
-channel_tx = channel.serialize_without_witness()
-channel_vin_sig = key0.sign_ecdsa(channel_tx)
-channel.vin[0].scriptSig = CScript([channel_vin_sig, key0.get_pubkey().get_bytes()])
+# channel_out = CTxOut(1999_999_000, CScript([OP_HASH160, hash160(channel_script), OP_EQUAL]))
+# channel.vout = [channel_out]
+
+channel_out = CTxOut(1500_000_000, CScript([OP_HASH160, hash160(channel_script), OP_EQUAL]))
+channel_change = CTxOut(499_999_000, CScript([OP_DUP, OP_HASH160, hash160(key0.get_pubkey().get_bytes()), OP_EQUALVERIFY, OP_CHECKSIG]))
+channel.vout = [channel_out, channel_change]
 
 channel_tx = channel.serialize().hex()
+
+res = node1.signrawtransactionwithkey(channel_tx, [key0_wif])
+
+print("Signing res: {}".format(res))
+
+channel_tx = res["hex"]
+
+# channel_vin_sig = key0.sign_ecdsa(channel_tx)
+# channel.vin[0].scriptSig = CScript([channel_vin_sig, key0.get_pubkey().get_bytes()])
+#
+# channel_tx = channel.serialize().hex()
 
 print(channel_tx)
 
 res = node1.sendrawtransaction(channel_tx)
 # res = node1.testmempoolaccept(rawtxs=[channel_tx], maxfeerate=0)
-print(res)
+# print(res)
+
+node1.generatetoaddress(2, node1_addr)
+
+unspent = node1.listunspent(addresses=[addr0])
+print(unspent)
+
+# balance = node1.getreceivedbyaddress(addr0_change)
+# print('Addr0 change balance:', balance)
+
 
 # sighash = SegwitV0SignatureHash(script=channel_script,
 #                                 txTo=spescriptnding_tx,
