@@ -106,9 +106,9 @@ secret_hash = hash160(secret)
 
 channel_script = CScript([CScriptOp(OP_HASH160), secret_hash, CScriptOp(OP_EQUAL),
                           CScriptOp(OP_IF),
-                          key0.get_pubkey().get_bytes(),
-                          CScriptOp(OP_ELSE),
                           key1.get_pubkey().get_bytes(),
+                          CScriptOp(OP_ELSE),
+                          key0.get_pubkey().get_bytes(),
                           CScriptOp(OP_ENDIF),
                           CScriptOp(OP_CHECKSIG)])
 
@@ -124,15 +124,21 @@ outpoint = COutPoint(int(tx0_id, 16), 0)
 channel_in = CTxIn(outpoint)
 channel.vin = [channel_in]
 
-channel_out = CTxOut(4500_000_000, CScript([OP_HASH160, hash160(channel_script), OP_EQUAL]))
-channel_change = CTxOut(499_999_000, CScript([OP_DUP, OP_HASH160, hash160(key0.get_pubkey().get_bytes()), OP_EQUALVERIFY, OP_CHECKSIG]))
+channel_out = CTxOut(4_500_000_000, CScript([OP_HASH160, hash160(channel_script), OP_EQUAL]))
+channel_change = CTxOut(499_999_000, CScript(
+    [OP_DUP, OP_HASH160, hash160(key0.get_pubkey().get_bytes()), OP_EQUALVERIFY, OP_CHECKSIG]))
 channel.vout = [channel_out, channel_change]
 
 channel_tx = channel.serialize().hex()
 
 res = node1.signrawtransactionwithkey(channel_tx, [key0_wif])
 
-print("Signing res: {}".format(res))
+if not res["complete"]:
+    print("Channel signature failed")
+    test.shutdown()
+    exit(1)
+
+print("Signed tx: {}".format(res["hex"]))
 
 channel_tx = res["hex"]
 
@@ -141,17 +147,42 @@ channel_tx = res["hex"]
 # channel.vin[0].scriptSig = CScript([channel_vin_sig, key0.get_pubkey().get_bytes()])
 # channel_tx = channel.serialize().hex()
 
-print(channel_tx)
 
-res = node1.sendrawtransaction(channel_tx)
+channel_tx_id = node1.sendrawtransaction(channel_tx)
+print("Channel tx: {}".format(channel_tx))
+
 node1.generatetoaddress(2, node1_addr)
+
 
 unspent = node1.listunspent(addresses=[addr0])
 print("Change remained: {}".format(unspent[0]["amount"]))
 
-# balance = node1.getreceivedbyaddress(addr0_change)
-# print('Addr0 change balance:', balance)
 
+# channel_tx_data = node1.gettransaction(channel_tx_id)
+# channel_tx = channel_tx_data["hex"]
+
+channel_json = node1.decoderawtransaction(channel_tx)
+channel_tx_id = channel_json["txid"]
+
+print("Channel tx id: {}".format(channel_tx_id))
+
+spend_channel = CTransaction()
+spend_channel.nVersion = 2
+spend_channel.nLockTime = 0
+
+channel_script_bytes = bytes(channel_script)
+
+spend_channel.vin = [CTxIn(COutPoint(int(channel_tx_id, 16), 0),
+                           CScript([secret, key1.get_pubkey().get_bytes(), channel_script_bytes]))]
+spend_channel.vout = [CTxOut(4_499_999_000), CScript(
+    [OP_DUP, OP_HASH160, hash160(key1.get_pubkey().get_bytes()), OP_EQUALVERIFY, OP_CHECKSIG])]
+
+spend_channel_tx = spend_channel.serialize().hex()
+
+spend_channel_tx = node1.sendrawtransaction(spend_channel_tx)
+spend_channel_json = node1.decoderawtransaction(spend_channel_tx)
+
+node1.generatetoaddress(2, node1_addr)
 
 # sighash = SegwitV0SignatureHash(script=channel_script,
 #                                 txTo=spescriptnding_tx,
