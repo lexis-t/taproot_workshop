@@ -13,7 +13,6 @@ from test_framework.script import CScript, CScriptOp, OP_IF, OP_ELSE, OP_ENDIF, 
 from test_framework.segwit_addr import bech32_decode
 from util import TestWrapper
 import base58
-import bitcoin
 
 test = TestWrapper()
 # Start TestNodes
@@ -75,7 +74,7 @@ addr0_change = key_to_p2pkh(key0_change.get_pubkey().get_bytes())
 key0_change_bytes = b'\xef' + key0_change.get_bytes() + b'\x01'
 key0_change_wif = str(base58.b58encode_check(key0_change_bytes), "ascii")
 
-# node1.importprivkey(key0_change_wif, "key0 change", False)
+node1.importprivkey(key0_change_wif, "key0 change", False)
 
 
 # Receiving key
@@ -133,6 +132,7 @@ channel_tx = channel.serialize().hex()
 
 res = node1.signrawtransactionwithkey(channel_tx, [key0_wif])
 
+
 if not res["complete"]:
     print("Channel signature failed")
     test.shutdown()
@@ -152,7 +152,6 @@ channel_tx_id = node1.sendrawtransaction(channel_tx)
 print("Channel tx: {}".format(channel_tx))
 
 node1.generatetoaddress(2, node1_addr)
-
 
 unspent = node1.listunspent(addresses=[addr0])
 print("Change remained: {}".format(unspent[0]["amount"]))
@@ -174,10 +173,12 @@ channel_script_bytes = bytes(channel_script)
 
 spend_channel.vin = [CTxIn(COutPoint(int(channel_tx_id, 16), 0),
                            CScript([secret, key1.get_pubkey().get_bytes(), channel_script_bytes]))]
-spend_channel.vout = [CTxOut(4_499_999_000), CScript(
-    [OP_DUP, OP_HASH160, hash160(key1.get_pubkey().get_bytes()), OP_EQUALVERIFY, OP_CHECKSIG])]
+spend_channel.vout = [CTxOut(4_499_999_000, CScript(
+    [OP_DUP, OP_HASH160, hash160(key1.get_pubkey().get_bytes()), OP_EQUALVERIFY, OP_CHECKSIG]))]
 
 spend_channel_tx = spend_channel.serialize().hex()
+
+print("Spend Channel tx id: {}".format(spend_channel_tx))
 
 spend_channel_tx = node1.sendrawtransaction(spend_channel_tx)
 spend_channel_json = node1.decoderawtransaction(spend_channel_tx)
