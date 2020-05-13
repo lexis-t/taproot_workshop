@@ -1,0 +1,23 @@
+version: '2.4'
+
+x-app: &app
+  build:
+    context: .
+  image: arrow_taproot_workshop:1.0
+  stdin_open: true
+  tty: true
+  tmpfs:
+    - /tmp
+  volumes:
+    - .:/app:cached
+
+services:
+  jupyter:
+    <<: *app
+    command: jupyter notebook --ip=0.0.0.0 --port=8888 --allow-root
+    ports:
+      - '8888:8888'
+
+  test:
+    <<: *app
+    command: python3 TestCluster.py

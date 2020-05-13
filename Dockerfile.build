@@ -29,4 +29,6 @@ RUN cd /bitcoin && ./autogen.sh && ./configure --prefix=$PWD/depends/x86_64-pc-l
 
 # Install Jupyter dependencies
 RUN pip3 install jupyter
+RUN pip3 install wheel
+RUN pip3 install bitcoin
 

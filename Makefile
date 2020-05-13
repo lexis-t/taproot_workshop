@@ -1,14 +1,16 @@
-.PHONY: docker build run prepare
+.PHONY: docker docker-push test prepare jupyter
 
 docker:
 	docker build -t arrowpass/taproot_workshop -f Dockerfile.build .
-	docker push arropass/taproot_workshop
 
-build:
-	docker build --tag taproot_workshop_run .
+docker-push: docker
+	docker push arrowpass/taproot_workshop
 
-run: build
-	docker run -p 8888:8888 taproot_workshop_run jupyter notebook --ip=0.0.0.0 --port=8888 --allow-root
+jupyter:
+	docker-compose up jupyter
+
+test:
+	docker-compose up test
 
 prepare:
 	cp config.ini.sample config.ini
