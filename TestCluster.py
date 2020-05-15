@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
 from time import sleep
 
-import bitcoin
-
-import util
 from test_framework.address import program_to_witness, key_to_p2pkh, key_to_p2sh_p2wpkh, script_to_p2sh, byte_to_base58
 from test_framework.key import generate_key_pair, ECKey
-from test_framework.messages import COutPoint, CTransaction, CTxIn, CTxOut, CTxInWitness, FromHex
+from test_framework.messages import COutPoint, CTransaction, CTxIn, CTxOut, CTxInWitness, FromHex, hash256
 import test_framework
 from test_framework.script import CScript, CScriptOp, OP_IF, OP_ELSE, OP_ENDIF, OP_HASH160, OP_EQUAL, OP_CHECKSIG, \
-    SegwitV0SignatureHash, get_p2pkh_script, hash160, SIGHASH_ALL, OP_DUP, OP_EQUALVERIFY
+    SegwitV0SignatureHash, get_p2pkh_script, hash160, SIGHASH_ALL, OP_DUP, OP_EQUALVERIFY, LegacySignatureHash
 from test_framework.segwit_addr import bech32_decode
 from util import TestWrapper
 import base58
@@ -35,20 +32,20 @@ node1.generatetoaddress(250, node1_addr)
 # node2.generatetoaddress(250, node2_addr)
 # node3.generate(2)
 
-node1_priv = node1.dumpprivkey(node1_addr)
-print("Node1 key base58: {}".format(node1_priv))
-
-node1_key_bytes = base58.b58decode_check(node1_priv)
-print("Node1 key: {}".format(node1_key_bytes.hex()))
-
-node1_key_reencoded = base58.b58encode_check(node1_key_bytes)
-print("Node1 key reencoded: {}".format(node1_key_reencoded))
-
 balance1 = node1.getbalance()
 print('Balance node 1:', balance1)
 
 # balance2 = node2.getbalance()
 # print('Balance node 2:', balance2)
+
+node1_priv = node1.dumpprivkey(node1_addr)
+print("Node1 key base58: {}".format(node1_priv))
+
+node1_key_bytes = base58.b58decode_check(node1_priv)[1:-1]
+print("Node1 key: {}".format(node1_key_bytes.hex()))
+
+node1_key = ECKey()
+node1_key.set(node1_key_bytes, True)
 
 # Spending key
 key0 = ECKey()
@@ -97,19 +94,27 @@ tx0_data = node1.gettransaction(tx0_id)
 tx0 = FromHex(CTransaction(), tx0_data["hex"])
 print(tx0)
 
+tx0_out_idx = 0
+if tx0.vout[0].nValue != 5000_000_000:
+    tx0_out_idx = 1
+
 # Transaction script from https://medium.com/softblocks/lightning-network-in-depth-part-2-htlc-and-payment-routing-db46aea445a8
 # but without timeout condition for simplicity
 
 secret = b'secret'
 secret_hash = hash160(secret)
 
-channel_script = CScript([CScriptOp(OP_HASH160), secret_hash, CScriptOp(OP_EQUAL),
-                          CScriptOp(OP_IF),
-                          key1.get_pubkey().get_bytes(),
-                          CScriptOp(OP_ELSE),
-                          key0.get_pubkey().get_bytes(),
-                          CScriptOp(OP_ENDIF),
-                          CScriptOp(OP_CHECKSIG)])
+channel_script = CScript([
+                            OP_HASH160,
+                            secret_hash,
+                            OP_EQUAL,
+                            OP_IF,
+                            key1.get_pubkey().get_bytes(),
+                            OP_ELSE,
+                            key0.get_pubkey().get_bytes(),
+                            OP_ENDIF,
+                            OP_CHECKSIG
+                          ])
 
 script_addr = script_to_p2sh(channel_script)
 
@@ -119,19 +124,30 @@ channel = CTransaction()
 channel.nVersion = 2
 channel.nLockTime = 0
 
-outpoint = COutPoint(int(tx0_id, 16), 0)
+outpoint = COutPoint(int(tx0_id, 16), tx0_out_idx)
 channel_in = CTxIn(outpoint)
 channel.vin = [channel_in]
 
-channel_out = CTxOut(4_500_000_000, CScript([OP_HASH160, hash160(channel_script), OP_EQUAL]))
-channel_change = CTxOut(499_999_000, CScript(
-    [OP_DUP, OP_HASH160, hash160(key0.get_pubkey().get_bytes()), OP_EQUALVERIFY, OP_CHECKSIG]))
+channel_out = CTxOut(4_500_000_000,
+                     CScript([
+                         OP_HASH160,
+                         hash160(channel_script),
+                         OP_EQUAL
+                     ]))
+
+channel_change = CTxOut(499_999_000,
+                        CScript([
+                            OP_DUP,
+                            OP_HASH160,
+                            hash160(key0.get_pubkey().get_bytes()),
+                            OP_EQUALVERIFY,
+                            OP_CHECKSIG
+                        ]))
+
 channel.vout = [channel_out, channel_change]
 
 channel_tx = channel.serialize().hex()
-
 res = node1.signrawtransactionwithkey(channel_tx, [key0_wif])
-
 
 if not res["complete"]:
     print("Channel signature failed")
@@ -142,14 +158,27 @@ print("Signed tx: {}".format(res["hex"]))
 
 channel_tx = res["hex"]
 
-# channel_tx = channel.serialize()
-# channel_vin_sig = key0.sign_ecdsa(channel_tx) + chr(SIGHASH_ALL).encode('latin-1')
+# channel_buf = channel.serialize_without_witness()
+# channel_buf += struct.pack(b"<I", SIGHASH_ALL)
+# channel_hash = hash256(channel_buf)
+
+# channel_hash = LegacySignatureHash(get_p2pkh_script(hash160(key0.get_pubkey().get_bytes())),
+#                                    channel,
+#                                    0,
+#                                    SIGHASH_ALL)
+#
+# if channel_hash[1] is not None:
+#     print("Channel hashing failed: {}".format(channel_hash[1]))
+#     test.shutdown()
+#     exit(1)
+#
+# channel_vin_sig = key0.sign_ecdsa(channel_hash[0]) + chr(SIGHASH_ALL).encode('latin-1')
 # channel.vin[0].scriptSig = CScript([channel_vin_sig, key0.get_pubkey().get_bytes()])
+#
 # channel_tx = channel.serialize().hex()
 
 
 channel_tx_id = node1.sendrawtransaction(channel_tx)
-print("Channel tx: {}".format(channel_tx))
 
 node1.generatetoaddress(2, node1_addr)
 
@@ -169,18 +198,30 @@ spend_channel = CTransaction()
 spend_channel.nVersion = 2
 spend_channel.nLockTime = 0
 
-channel_script_bytes = bytes(channel_script)
-
 spend_channel.vin = [CTxIn(COutPoint(int(channel_tx_id, 16), 0),
-                           CScript([secret, key1.get_pubkey().get_bytes(), channel_script_bytes]))]
-spend_channel.vout = [CTxOut(4_499_999_000, CScript(
-    [OP_DUP, OP_HASH160, hash160(key1.get_pubkey().get_bytes()), OP_EQUALVERIFY, OP_CHECKSIG]))]
+                           CScript([
+                               secret,
+                               key1.get_pubkey().get_bytes(),
+                               channel_script
+                           ]))]
+
+spend_channel.vout = [CTxOut(4_499_999_000,
+                             CScript([
+                                 OP_DUP,
+                                 OP_HASH160,
+                                 hash160(key1.get_pubkey().get_bytes()),
+                                 OP_EQUALVERIFY,
+                                 OP_CHECKSIG
+                             ]))]
 
 spend_channel_tx = spend_channel.serialize().hex()
 
-print("Spend Channel tx id: {}".format(spend_channel_tx))
+print("Spend Channel tx: {}".format(spend_channel_tx))
+
+print(FromHex(CTransaction(), spend_channel_tx))
 
 spend_channel_tx = node1.sendrawtransaction(spend_channel_tx)
+
 spend_channel_json = node1.decoderawtransaction(spend_channel_tx)
 
 node1.generatetoaddress(2, node1_addr)
